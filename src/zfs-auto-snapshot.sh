@@ -42,7 +42,7 @@ opt_verbose=''
 opt_pre_snapshot=''
 opt_post_snapshot=''
 opt_do_snapshots=1
-opt_min_size=0
+opt_min_size=1024
 
 # Global summary statistics.
 DESTRUCTION_COUNT='0'
@@ -162,23 +162,23 @@ do_snapshots () # properties, flags, snapname, oldglob, [targets...]
 
 	for ii in $TARGETS
 	do
-                # Check if size check is > 0
-                size_check_skip=0
-                if [ "$opt_min_size" -gt 0 ]
+        # Check if size check is > 0
+        size_check_skip=0
+        if [ "$opt_min_size" -gt 0 ]
+        then
+                bytes_written=`zfs get -Hp -o value written $ii`
+                kb_written=$(( $bytes_written / 1024 ))
+                if [ "$kb_written" -lt "$opt_min_size" ]
                 then
-                        bytes_written=`zfs get -Hp -o value written $ii`
-                        kb_written=$(( $bytes_written / 1024 ))
-                        if [ "$kb_written" -lt "$opt_min_size" ]
+                        size_check_skip=1
+                        if [ $opt_verbose -gt 0 ]
                         then
-                                size_check_skip=1
-                                if [ $opt_verbose -gt 0 ]
-                                then
-                                        echo "Skipping target $ii, only $kb_written kB written since last snap. opt_min_size is $opt_min_size"
-                                fi
+                                echo "Skipping target $ii, only $kb_written kB written since last snap. opt_min_size is $opt_min_size"
                         fi
                 fi
+        fi
 
-                if [ -n "$opt_do_snapshots" -a "$size_check_skip" -eq 0 ]
+        if [ -n "$opt_do_snapshots" -a "$size_check_skip" -eq 0 ]
 		then
 			if [ "$opt_pre_snapshot" != "" ]
 			then
@@ -481,7 +481,14 @@ do
 	# Just testing "$ii" != ${ii#$jj} would incorrectly match.
 	iii="$ii/"
 
-
+    #exclude if the written size is too low
+    bytes_written=`zfs get -Hp -o value written $ii`
+    kb_written=$(( $bytes_written / 1024 ))
+    if [ "$kb_written" -lt "$opt_min_size" ]
+    then
+        print_log info "Excluding $ii because only $kb_written kB written since last snap. opt_min_size is $opt_min_size"
+        continue
+    fi
 	# Exclude datasets
 	# * that are not named on the command line or
 	# * those whose prefix is not on the command line (if --recursive flag is set)
@@ -531,6 +538,7 @@ do
 			continue 2
 		fi
 	done
+
 
 	for jj in $NOAUTO
 	do
